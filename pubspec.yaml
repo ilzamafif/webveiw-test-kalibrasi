@@ -36,15 +36,9 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.6
-  flutter_mjpeg: ^2.0.4
-  flutter_widget_from_html: ^0.8.2
-  flutter_speed_dial: ^4.2.0  # Sesuaikan versi dengan yang terbaru atau yang kompatibel dengan Flutter Anda
-  fluttertoast: ^8.0.8       # Sesuaikan versi dengan yang terbaru atau yang kompatibel dengan Flutter Anda
-  gesture_zoom_box: ^0.0.4   # Sesuaikan versi dengan yang terbaru atau yang kompatibel dengan Flutter Anda
-  intl: ^0.17.0   # Sesuaikan versi dengan yang terbaru atau yang kompatibel dengan Flutter Anda
-  web_socket_channel: ^2.1.0
-  image_gallery_saver: ^2.0.3
   webview_flutter: ^3.0.0
+  permission_handler: ^11.3.1
+  flutter_inappwebview: ^6.0.0
 
 dev_dependencies:
   flutter_test:

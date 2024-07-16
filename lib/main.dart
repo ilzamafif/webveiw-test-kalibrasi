@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Permission.camera.request();
+  await Permission.microphone
+      .request(); // if you need microphone permissionasync
   runApp(MyApp());
 }
 
@@ -9,7 +14,8 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter WebView Example',
+      debugShowCheckedModeBanner: false,
+      title: '',
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
@@ -18,17 +24,26 @@ class MyApp extends StatelessWidget {
   }
 }
 
+Future<void> requestCameraPermission() async {
+  var status = await Permission.camera.status;
+  if (!status.isGranted) {
+    await Permission.camera.request();
+  }
+}
+
 class MyHomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text("WebView Example"),
-      ),
-      body: WebView(
-        initialUrl: 'https://wyasaaplikasi.com',
-        javascriptMode: JavascriptMode.unrestricted,
-      ),
+      body: SafeArea(
+          child: WebView(
+          initialUrl: 'https://kalibrasi.wyasaaplikasi.com',
+          javascriptMode: JavascriptMode.unrestricted,
+          onWebViewCreated: (WebViewController webViewController) {
+          webViewController.evaluateJavascript(
+              "navigator.mediaDevices.getUserMedia({ video: true })");
+        },
+      )),
     );
   }
 }
