@@ -1,6 +1,11 @@
+import 'dart:isolate';
+import 'dart:ui';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 Future main() async {
@@ -11,11 +16,15 @@ Future main() async {
     await InAppWebViewController.setWebContentsDebuggingEnabled(kDebugMode);
   }
 
-  runApp(const MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: MyApp()
-      )
-    );
+  // Plugin must be initialized before using
+  await FlutterDownloader.initialize(
+      debug: true,
+      // optional: set to false to disable printing logs to console (default: true)
+      ignoreSsl:
+          false // option: set to false to disable working with http links (default: false)
+      );
+
+  runApp(const MaterialApp(home: MyApp()));
 }
 
 class MyApp extends StatefulWidget {
@@ -30,80 +39,119 @@ class _MyAppState extends State<MyApp> {
 
   InAppWebViewController? webViewController;
 
+  final ReceivePort _port = ReceivePort();
+
+  @override
+  void initState() {
+    super.initState();
+
+    IsolateNameServer.registerPortWithName(
+        _port.sendPort, 'downloader_send_port');
+    _port.listen((dynamic data) {
+      String id = data[0];
+      DownloadTaskStatus status = data[1];
+      int progress = data[2];
+      if (kDebugMode) {
+        print("Download progress: $progress%");
+      }
+      if (status == DownloadTaskStatus.complete) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text("Download $id completed!"),
+        ));
+      }
+    });
+    FlutterDownloader.registerCallback(downloadCallback);
+  }
+
+  @override
+  void dispose() {
+    IsolateNameServer.removePortNameMapping('downloader_send_port');
+    super.dispose();
+  }
+
+  @pragma('vm:entry-point')
+  static void downloadCallback(String id, int progress) {
+    final SendPort? send =
+        IsolateNameServer.lookupPortByName('downloader_send_port');
+    send?.send([id, DownloadTaskStatus.complete, progress]);
+  }
+
+  void handleClick(int item) async {
+    switch (item) {
+      case 0:
+        await webViewController?.loadUrl(
+            urlRequest: URLRequest(
+                url: WebUri("https://proof.ovh.net/files/10Mb.dat")));
+        break;
+      case 1:
+        await webViewController?.loadUrl(
+            urlRequest: URLRequest(
+                url: WebUri(
+                    "https://www.w3schools.com/tags/tryit.asp?filename=tryhtml5_a_download")));
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
         appBar: AppBar(
+          title: const Text("InAppWebView Download"),
           actions: [
-            TextButton(
-                onPressed: () async {
-                  await webViewController?.loadUrl(
-                      urlRequest: URLRequest(
-                          url: WebUri("https://apprtc.webrtcserver.cn/")));
-                },
-                child: const Text(
-                  "AppRTC",
-                  style: TextStyle(color: Colors.white),
-                )),
-            TextButton(
-                onPressed: () async {
-                  await webViewController?.loadUrl(
-                      urlRequest: URLRequest(
-                          url: WebUri(
-                              "https://www.pubnub.com/developers/demos/webrtc/launch/")));
-                },
-                child: const Text("PubNub WebRTC",
-                    style: TextStyle(color: Colors.white)))
+            PopupMenuButton<int>(
+              onSelected: (item) => handleClick(item),
+              itemBuilder: (context) => [
+                const PopupMenuItem<int>(
+                    value: 0, child: Text('Download file 1')),
+                const PopupMenuItem<int>(
+                    value: 1, child: Text('Download file 2')),
+              ],
+            ),
           ],
         ),
         body: Column(children: <Widget>[
           Expanded(
             child: InAppWebView(
               key: webViewKey,
-              initialUrlRequest:
-                  URLRequest(url: WebUri("https://kalibrasi.wyasaaplikasi.com/")),
-              initialSettings: InAppWebViewSettings(
-                mediaPlaybackRequiresUserGesture: false,
-                allowsInlineMediaPlayback: true,
-              ),
+              initialUrlRequest: URLRequest(url: WebUri("https://flutter.dev")),
               onWebViewCreated: (controller) {
                 webViewController = controller;
               },
-              onPermissionRequest: (controller, request) async {
-                final resources = <PermissionResourceType>[];
-                if (request.resources.contains(PermissionResourceType.CAMERA)) {
-                  final cameraStatus = await Permission.camera.request();
-                  if (!cameraStatus.isDenied) {
-                    resources.add(PermissionResourceType.CAMERA);
+              shouldOverrideUrlLoading: (controller, navigationAction) async {
+                if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+                  final shouldPerformDownload =
+                      navigationAction.shouldPerformDownload ?? false;
+                  final url = navigationAction.request.url;
+                  if (shouldPerformDownload && url != null) {
+                    await downloadFile(url.toString());
+                    return NavigationActionPolicy.DOWNLOAD;
                   }
                 }
-                if (request.resources
-                    .contains(PermissionResourceType.MICROPHONE)) {
-                  final microphoneStatus =
-                      await Permission.microphone.request();
-                  if (!microphoneStatus.isDenied) {
-                    resources.add(PermissionResourceType.MICROPHONE);
-                  }
-                }
-                // only for iOS and macOS
-                if (request.resources
-                    .contains(PermissionResourceType.CAMERA_AND_MICROPHONE)) {
-                  final cameraStatus = await Permission.camera.request();
-                  final microphoneStatus =
-                      await Permission.microphone.request();
-                  if (!cameraStatus.isDenied && !microphoneStatus.isDenied) {
-                    resources.add(PermissionResourceType.CAMERA_AND_MICROPHONE);
-                  }
-                }
-
-                return PermissionResponse(
-                    resources: resources,
-                    action: resources.isEmpty
-                        ? PermissionResponseAction.DENY
-                        : PermissionResponseAction.GRANT);
+                return NavigationActionPolicy.ALLOW;
+              },
+              onDownloadStartRequest: (controller, downloadStartRequest) async {
+                await downloadFile(downloadStartRequest.url.toString(),
+                    downloadStartRequest.suggestedFilename);
               },
             ),
           ),
         ]));
+  }
+
+  Future<void> downloadFile(String url, [String? filename]) async {
+    var hasStoragePermission = await Permission.storage.isGranted;
+    if (!hasStoragePermission) {
+      final status = await Permission.storage.request();
+      hasStoragePermission = status.isGranted;
+    }
+    if (hasStoragePermission) {
+      final taskId = await FlutterDownloader.enqueue(
+          url: url,
+          headers: {},
+          // optional: header send with url (auth token etc)
+          savedDir: (await getTemporaryDirectory()).path,
+          saveInPublicStorage: true,
+          fileName: filename);
+    }
   }
 }
