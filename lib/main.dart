@@ -39,6 +39,12 @@ class _MyHomePageState extends State<MyHomePage> {
         onWebViewCreated: (WebViewController webViewController) {
           _controller.complete(webViewController);
         },
+        gestureNavigationEnabled: true,
+        onPageFinished: (String url) {
+          // Menjalankan JavaScript untuk memeriksa local storage
+          _controller.future.then((webViewController) {
+          });
+        },
         navigationDelegate: (NavigationRequest request) {
           if (request.url.startsWith("https://iot.wyasaaplikasi.com/")) {
             return NavigationDecision.navigate;
